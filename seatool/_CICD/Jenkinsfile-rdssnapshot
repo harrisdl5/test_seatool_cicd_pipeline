@@ -1,0 +1,79 @@
+// Uses Declarative syntax to run commands inside a container.
+pipeline {
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-role
+  restartPolicy: Never
+  containers:
+  - name: aws-pythonsdk
+    image: seanwalshdev/aws-pythonsdk:0.1
+    command: ['cat']
+    tty: true
+  - name: awscli
+    image: amazon/aws-cli
+    command: ['cat']
+    tty: true
+'''
+            //defaultContainer 'awscli'
+        }
+    }
+  stages {
+        stage('establish arn'){
+          steps {
+            script {
+              if (env.ENVIRONMENT == 'dev'){
+                env.arn = 'arn:aws:iam::360433083926:role/delegatedadmin/developer/cbc-seatool-dev'
+                }
+              if (env.ENVIRONMENT == 'impl'){
+                env.arn = 'arn:aws:iam::204488982178:role/delegatedadmin/developer/cbc-seatool-impl'
+                }
+              if (env.ENVIRONMENT == 'prod'){
+                env.arn = 'arn:aws:iam::635526538414:role/delegatedadmin/developer/cbc-seatool-prod'
+                }
+            }
+          }
+        }
+        stage('aws config'){
+            steps {
+              container ('awscli'){
+                sh '''
+                aws sts assume-role \
+                --role-arn $arn \
+                --role-session-name cbc-rdssnap \
+                --output text \
+                --query Credentials \
+                > /tmp/role-creds.txt
+                cat > .aws-creds <<EOF
+[default]
+aws_access_key_id = $(cut -f1 /tmp/role-creds.txt)
+aws_secret_access_key = $(cut -f3 /tmp/role-creds.txt)
+aws_session_token = $(cut -f4 /tmp/role-creds.txt)
+EOF
+                '''
+              }
+            }
+        }
+        stage('create snapshot'){
+          steps {
+            container ('aws-pythonsdk'){
+              sh '''
+              # Run AWS command to test the assume role.
+              mkdir -p $HOME/.aws
+              cp -v .aws-creds $HOME/.aws/credentials
+              unset AWS_WEB_IDENTITY_TOKEN_FILE
+              aws sts get-caller-identity
+              cd rcm/seatool/_CICD/
+              chmod +x rds_snapshot.py
+              # echo $DB_IDENTIFIER
+              python3 rds_snapshot.py
+              '''
+            }
+          }
+        }
+  }
+}
+
