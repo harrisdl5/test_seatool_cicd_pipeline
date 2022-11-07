@@ -36,7 +36,7 @@ resource "aws_instance" "this" {
     Name      = "${element(local.hostn, count.index)}"
     Terraform = "true"
     hostname  = "${element(local.hostn, count.index)}"
-    launch_runbooks  = false
+    launch_runbooks  = "false"
     ec2_backup = "${var.this["ec2_backup"]}"
     "Patch Window" = "${var.this["patch_window"]}"
     "Patch Group"  = "${var.this["patch_group"]}"
